@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 from datetime import datetime, timezone
+from keep_alive import keep_alive
 
 import discord
 from discord.ext import commands
@@ -517,4 +518,5 @@ async def testquarantaine(ctx, member: discord.Member):
     except Exception as error:
         await ctx.send(f"❌ Impossible d’ajouter le rôle : {error}")
 
+keep_alive()
 bot.run(TOKEN)
