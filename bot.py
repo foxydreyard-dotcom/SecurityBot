@@ -30,99 +30,54 @@ raid_mode = False
 safe_members = set()
 
 SUSPICIOUS_LINKS = [
-    "discord.gift",
-    "free-nitro",
-    "nitro-free",
-    "grabify",
-    "bit.ly",
-    "tinyurl",
+    "discord.gift", "free-nitro", "nitro-free", "grabify", "bit.ly", "tinyurl"
 ]
 
 DANGEROUS_WORDS = [
-    "token grabber",
-    "ddos",
-    "hack server",
-    "free nitro",
-    "password",
+    "token grabber", "ddos", "hack server", "free nitro", "password"
 ]
 
 BAD_PATTERNS = [
-    "fdp",
-    "connard",
-    "conard",
-    "connar",
-    "pute",
-    "ptn",
-    "encule",
-    "enculer",
-    "salope",
-    "salop",
-    "batard",
-    "batart",
-    "ntm",
-    "tg",
-    "ta gueule",
-    "ferme ta gueule",
-    "nique ta mere",
-    "nik ta mere",
-    "nique ta mer",
-    "nik ta mer",
-    "nique t mere",
-    "nik t mer",
-    "nique tes morts",
-    "nik tes morts",
+    "fdp", "fils de pute", "pute", "putain", "ptn", "salope", "salop",
+    "connard", "conard", "connasse", "encule", "enculer", "batard",
+    "bouffon", "clochard", "clodo", "demeure", "debile", "abruti",
+    "idiot", "imbecile", "attarde", "mongol", "gros porc", "porc",
+    "chien", "sale chien", "sale rat", "rat", "cafard", "clebard",
+    "merdeux", "grosse merde", "sous merde", "ordure", "dechet",
+    "tare", "fou malade", "malade mental", "nique ta mere", "nik ta mere",
+    "nique ta mer", "nik ta mer", "nique tes morts", "nik tes morts",
+    "tes morts", "de tes morts", "suce", "suce moi", "va sucer",
+    "ferme ta gueule", "ta gueule", "tg", "ntm", "fdmm", "fdm", "fdt",
+    "nik", "nique", "encu", "pd", "pede", "tafiole", "travelo",
+    "pauvre type", "pauvre merde", "gros con", "sale con", "sale pute",
+    "sale merde", "tu sers a rien", "personne t aime",
+    "tout le monde te deteste", "t es inutile", "tu pues la merde",
+    "tu fais pitie", "fuck you", "bitch", "asshole", "motherfucker",
+    "son of a bitch", "stfu", "dumbass", "retard"
 ]
 
 THREAT_PATTERNS = [
-    "je vais te tuer",
-    "jvais te tuer",
-    "jte tue",
-    "je te tue",
-    "tu vas mourir",
-    "je vais te retrouver",
-    "jvais te retrouver",
-    "je vais te frapper",
-    "jvais te frapper",
-    "je vais te demolir",
+    "je vais te tuer", "jvais te tuer", "jte tue", "je te tue",
+    "tu vas mourir", "je vais te retrouver", "jvais te retrouver",
+    "je vais te frapper", "jvais te frapper", "je vais te demolir",
+    "allez crever", "va crever", "va crever en enfer",
+    "crever en enfer", "vous allez crever", "tu vas crever",
+    "va mourir", "allez mourir", "meurs", "mourrez"
 ]
 
 CONTEXT_PATTERNS = [
-    "on ma dit",
-    "on m a dit",
-    "il ma dit",
-    "il m a dit",
-    "elle ma dit",
-    "elle m a dit",
-    "jai recu",
-    "j ai recu",
-    "on ma insulte",
-    "on m a insulte",
-    "on ma menace",
-    "on m a menace",
-    "en mp",
-    "screen",
-    "capture",
-    "preuve",
-    "temoignage",
-    "je viens vous voir",
-    "je signale",
-    "il a dit que",
-    "elle a dit que",
+    "on ma dit", "on m a dit", "il ma dit", "il m a dit",
+    "elle ma dit", "elle m a dit", "jai recu", "j ai recu",
+    "on ma insulte", "on m a insulte", "on ma menace", "on m a menace",
+    "en mp", "screen", "capture", "preuve", "temoignage",
+    "je viens vous voir", "je signale", "il a dit que", "elle a dit que",
+    "on m'a dit", "il m'a dit", "elle m'a dit", "j'ai reçu"
 ]
 
 DIRECT_ATTACK_WORDS = [
-    "tes",
-    "t es",
-    "tu es",
-    "toi",
-    "va te",
-    "ferme ta",
-    "sale",
-    "nique",
-    "nik",
-    "ta mere",
-    "ta mer",
-    "tes morts",
+    "tes", "t es", "tu es", "toi", "va te", "ferme ta", "sale",
+    "nique", "nik", "ta mere", "ta mer", "tes morts", "de tes morts",
+    "creve", "crever", "meurs", "mourrez"
 ]
 
 
@@ -146,16 +101,16 @@ def contains_pattern(content, patterns):
     return any(pattern in content for pattern in patterns)
 
 
-def is_context_ignored(content):
-    return contains_pattern(content, CONTEXT_PATTERNS)
-
-
 def contains_bad_word(content):
     return contains_pattern(content, BAD_PATTERNS)
 
 
 def contains_threat(content):
     return contains_pattern(content, THREAT_PATTERNS)
+
+
+def is_context_ignored(content):
+    return contains_pattern(content, CONTEXT_PATTERNS)
 
 
 def is_direct_attack(message):
@@ -167,37 +122,38 @@ def is_direct_attack(message):
     return any(word in content for word in DIRECT_ATTACK_WORDS)
 
 
+def starts_like_attack(content):
+    content = normalize_text(content)
+    attack_starts = (
+        "tu ", "toi ", "tes ", "t es ", "sale ", "nique ", "nik ",
+        "va ", "ferme ", "creve ", "meurs "
+    )
+    return content.startswith(attack_starts)
+
+
 def is_report_message(message):
     content = normalize_text(message.content)
 
     has_context = is_context_ignored(content)
-    has_mention = len(message.mentions) > 0
     has_bad = contains_bad_word(content) or contains_threat(content)
 
-    # Témoignage sans mention directe : on laisse passer
-    if has_context and not has_mention:
-        return True
+    if not has_context:
+        return False
 
-    # Témoignage avec mention mais formulation de signalement : on laisse passer
+    if starts_like_attack(content):
+        return False
+
     report_words = [
-        "je signale",
-        "je viens vous voir",
-        "on ma dit",
-        "il ma dit",
-        "elle ma dit",
-        "jai recu",
-        "en mp",
-        "screen",
-        "capture",
-        "preuve",
+        "je signale", "je viens vous voir", "on ma dit", "il ma dit",
+        "elle ma dit", "jai recu", "en mp", "screen", "capture",
+        "preuve", "temoignage"
     ]
 
-    if has_context and has_bad:
-        if any(word in content for word in report_words):
-            # sauf si le message commence clairement par une attaque directe
-            if content.startswith(("tu ", "toi ", "tes ", "t es ", "sale ", "nique ", "nik ")):
-                return False
-            return True
+    if has_bad and any(word in content for word in report_words):
+        return True
+
+    if has_context and not is_direct_attack(message):
+        return True
 
     return False
 
@@ -282,7 +238,6 @@ async def on_member_join(member):
         await log(member.guild, "🚨 Mode raid activé automatiquement.")
 
     account_age = now - member.created_at
-
     risk = 0
     reasons = []
 
@@ -315,10 +270,7 @@ async def on_member_join(member):
 
 @bot.event
 async def on_message(message):
-    if message.author.bot:
-        return
-
-    if not message.guild:
+    if message.author.bot or not message.guild:
         return
 
     member = message.author
@@ -329,16 +281,18 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # Témoignage / signalement : on ne sanctionne pas
     if is_report_message(message):
+        await log(
+            message.guild,
+            f"ℹ️ Message sensible ignoré comme signalement\n"
+            f"Auteur : {member.mention}"
+        )
         await bot.process_commands(message)
         return
 
-    # Menace directe
     if contains_threat(normalized) and is_direct_attack(message):
         await message.delete()
         await quarantine(member, "menace directe")
-
         await log(
             message.guild,
             f"🚨 Menace directe détectée\n"
@@ -347,10 +301,8 @@ async def on_message(message):
         )
         return
 
-    # Insulte directe
     if contains_bad_word(normalized) and is_direct_attack(message):
         await message.delete()
-
         await log(
             message.guild,
             f"⚠️ Insulte directe détectée\n"
@@ -365,25 +317,21 @@ async def on_message(message):
 
         return
 
-    # Liens suspects
     if any(link in normalized for link in SUSPICIOUS_LINKS):
         await message.delete()
         await quarantine(member, "lien suspect")
         return
 
-    # Mots dangereux
     if any(word in normalized for word in DANGEROUS_WORDS):
         await message.delete()
         await quarantine(member, "message dangereux")
         return
 
-    # Spam mentions
     if len(message.mentions) >= 5:
         await message.delete()
         await quarantine(member, "spam mentions")
         return
 
-    # Spam clavier
     if len(normalized) >= 8 and len(set(normalized.replace(" ", ""))) <= 2:
         await message.delete()
         await quarantine(member, "spam clavier")
@@ -489,7 +437,6 @@ async def status(ctx):
 @commands.has_permissions(administrator=True)
 async def noproblem(ctx, member: discord.Member):
     safe_members.add(member.id)
-
     role = ctx.guild.get_role(QUARANTINE_ROLE_ID)
 
     try:
