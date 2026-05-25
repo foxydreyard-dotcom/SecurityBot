@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import unicodedata
 from datetime import datetime, timezone
 
 import discord
@@ -45,41 +46,83 @@ DANGEROUS_WORDS = [
     "password",
 ]
 
-BAD_WORDS = [
+BAD_PATTERNS = [
     "fdp",
     "connard",
+    "conard",
+    "connar",
     "pute",
-    "enculé",
+    "ptn",
+    "encule",
+    "enculer",
     "salope",
+    "salop",
+    "batard",
+    "batart",
     "ntm",
     "tg",
+    "ta gueule",
     "ferme ta gueule",
-    "bâtard",
-    "nique ta mère",
     "nique ta mere",
+    "nik ta mere",
+    "nique ta mer",
+    "nik ta mer",
+    "nique t mere",
+    "nik t mer",
     "nique tes morts",
+    "nik tes morts",
 ]
 
-THREAT_WORDS = [
+THREAT_PATTERNS = [
     "je vais te tuer",
-    "je vais te retrouver",
+    "jvais te tuer",
+    "jte tue",
+    "je te tue",
     "tu vas mourir",
+    "je vais te retrouver",
+    "jvais te retrouver",
     "je vais te frapper",
-    "je vais te démolir",
+    "jvais te frapper",
+    "je vais te demolir",
 ]
 
-CONTEXT_IGNORE = [
-    "on m'a dit",
-    "il m'a dit",
-    "elle m'a dit",
-    "j'ai reçu",
-    "on m'a insulté",
-    "on m'a menacé",
+CONTEXT_PATTERNS = [
+    "on ma dit",
+    "on m a dit",
+    "il ma dit",
+    "il m a dit",
+    "elle ma dit",
+    "elle m a dit",
+    "jai recu",
+    "j ai recu",
+    "on ma insulte",
+    "on m a insulte",
+    "on ma menace",
+    "on m a menace",
     "en mp",
     "screen",
     "capture",
     "preuve",
-    "témoignage",
+    "temoignage",
+    "je viens vous voir",
+    "je signale",
+    "il a dit que",
+    "elle a dit que",
+]
+
+DIRECT_ATTACK_WORDS = [
+    "tes",
+    "t es",
+    "tu es",
+    "toi",
+    "va te",
+    "ferme ta",
+    "sale",
+    "nique",
+    "nik",
+    "ta mere",
+    "ta mer",
+    "tes morts",
 ]
 
 
@@ -89,37 +132,74 @@ async def log(guild, text):
         await channel.send(text)
 
 
+def normalize_text(text):
+    text = text.lower()
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    text = re.sub(r"[^a-z0-9@#\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def contains_pattern(content, patterns):
+    content = normalize_text(content)
+    return any(pattern in content for pattern in patterns)
+
+
 def is_context_ignored(content):
-    return any(text in content.lower() for text in CONTEXT_IGNORE)
+    return contains_pattern(content, CONTEXT_PATTERNS)
 
 
 def contains_bad_word(content):
-    return any(word in content.lower() for word in BAD_WORDS)
+    return contains_pattern(content, BAD_PATTERNS)
 
 
 def contains_threat(content):
-    return any(word in content.lower() for word in THREAT_WORDS)
+    return contains_pattern(content, THREAT_PATTERNS)
 
 
 def is_direct_attack(message):
-    content = message.content.lower()
-
-    direct_words = [
-        "t'es",
-        "tu es",
-        "va te",
-        "ferme ta",
-        "sale",
-        "nique",
-        "ta mère",
-        "ta mere",
-        "tes morts",
-    ]
+    content = normalize_text(message.content)
 
     if len(message.mentions) > 0:
         return True
 
-    return any(word in content for word in direct_words)
+    return any(word in content for word in DIRECT_ATTACK_WORDS)
+
+
+def is_report_message(message):
+    content = normalize_text(message.content)
+
+    has_context = is_context_ignored(content)
+    has_mention = len(message.mentions) > 0
+    has_bad = contains_bad_word(content) or contains_threat(content)
+
+    # Témoignage sans mention directe : on laisse passer
+    if has_context and not has_mention:
+        return True
+
+    # Témoignage avec mention mais formulation de signalement : on laisse passer
+    report_words = [
+        "je signale",
+        "je viens vous voir",
+        "on ma dit",
+        "il ma dit",
+        "elle ma dit",
+        "jai recu",
+        "en mp",
+        "screen",
+        "capture",
+        "preuve",
+    ]
+
+    if has_context and has_bad:
+        if any(word in content for word in report_words):
+            # sauf si le message commence clairement par une attaque directe
+            if content.startswith(("tu ", "toi ", "tes ", "t es ", "sale ", "nique ", "nik ")):
+                return False
+            return True
+
+    return False
 
 
 async def quarantine(member, reason):
@@ -242,19 +322,20 @@ async def on_message(message):
         return
 
     member = message.author
-    content = message.content.lower().strip()
+    content = message.content
+    normalized = normalize_text(content)
 
     if member.id in safe_members:
         await bot.process_commands(message)
         return
 
-    # Ignore témoignages seulement si ce n’est PAS une attaque directe
-    if is_context_ignored(content) and not is_direct_attack(message):
+    # Témoignage / signalement : on ne sanctionne pas
+    if is_report_message(message):
         await bot.process_commands(message)
         return
 
-    # Menaces directes
-    if contains_threat(content) and is_direct_attack(message):
+    # Menace directe
+    if contains_threat(normalized) and is_direct_attack(message):
         await message.delete()
         await quarantine(member, "menace directe")
 
@@ -266,8 +347,8 @@ async def on_message(message):
         )
         return
 
-    # Insultes directes
-    if contains_bad_word(content) and is_direct_attack(message):
+    # Insulte directe
+    if contains_bad_word(normalized) and is_direct_attack(message):
         await message.delete()
 
         await log(
@@ -285,13 +366,13 @@ async def on_message(message):
         return
 
     # Liens suspects
-    if any(link in content for link in SUSPICIOUS_LINKS):
+    if any(link in normalized for link in SUSPICIOUS_LINKS):
         await message.delete()
         await quarantine(member, "lien suspect")
         return
 
     # Mots dangereux
-    if any(word in content for word in DANGEROUS_WORDS):
+    if any(word in normalized for word in DANGEROUS_WORDS):
         await message.delete()
         await quarantine(member, "message dangereux")
         return
@@ -303,7 +384,7 @@ async def on_message(message):
         return
 
     # Spam clavier
-    if len(content) >= 8 and len(set(content)) <= 2:
+    if len(normalized) >= 8 and len(set(normalized.replace(" ", ""))) <= 2:
         await message.delete()
         await quarantine(member, "spam clavier")
         return
@@ -312,7 +393,7 @@ async def on_message(message):
         message_cache[member.id] = []
 
     now = datetime.now(timezone.utc).timestamp()
-    message_cache[member.id].append((content, now))
+    message_cache[member.id].append((normalized, now))
 
     message_cache[member.id] = [
         msg for msg in message_cache[member.id]
@@ -321,7 +402,7 @@ async def on_message(message):
 
     recent_messages = [msg[0] for msg in message_cache[member.id]]
 
-    if recent_messages.count(content) >= 3:
+    if recent_messages.count(normalized) >= 3:
         await message.delete()
         await quarantine(member, "message répété")
         return
