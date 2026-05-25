@@ -55,6 +55,9 @@ BAD_WORDS = [
     "tg",
     "ferme ta gueule",
     "bâtard",
+    "nique ta mère",
+    "nique ta mere",
+    "nique tes morts",
 ]
 
 THREAT_WORDS = [
@@ -87,18 +90,15 @@ async def log(guild, text):
 
 
 def is_context_ignored(content):
-    content = content.lower()
-    return any(text in content for text in CONTEXT_IGNORE)
+    return any(text in content.lower() for text in CONTEXT_IGNORE)
 
 
 def contains_bad_word(content):
-    content = content.lower()
-    return any(word in content for word in BAD_WORDS)
+    return any(word in content.lower() for word in BAD_WORDS)
 
 
 def contains_threat(content):
-    content = content.lower()
-    return any(word in content for word in THREAT_WORDS)
+    return any(word in content.lower() for word in THREAT_WORDS)
 
 
 def is_direct_attack(message):
@@ -106,11 +106,14 @@ def is_direct_attack(message):
 
     direct_words = [
         "t'es",
-        "tes",
         "tu es",
         "va te",
         "ferme ta",
         "sale",
+        "nique",
+        "ta mère",
+        "ta mere",
+        "tes morts",
     ]
 
     if len(message.mentions) > 0:
@@ -169,7 +172,6 @@ async def check_nuke(guild, user, action):
 
     if len(nuke_cache[user.id]) >= 3:
         member = guild.get_member(user.id)
-
         if member:
             await quarantine(member, f"anti-nuke : {action}")
 
@@ -188,7 +190,6 @@ async def on_member_join(member):
         return
 
     now = datetime.now(timezone.utc)
-
     join_cache.append(now.timestamp())
 
     join_cache[:] = [
@@ -247,8 +248,8 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # Ignore témoignages / preuves / contexte
-    if is_context_ignored(content):
+    # Ignore témoignages seulement si ce n’est PAS une attaque directe
+    if is_context_ignored(content) and not is_direct_attack(message):
         await bot.process_commands(message)
         return
 
@@ -311,7 +312,6 @@ async def on_message(message):
         message_cache[member.id] = []
 
     now = datetime.now(timezone.utc).timestamp()
-
     message_cache[member.id].append((content, now))
 
     message_cache[member.id] = [
