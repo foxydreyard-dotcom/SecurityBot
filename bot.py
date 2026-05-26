@@ -1,4 +1,4 @@
-import os
+  import os
 import re
 import asyncio
 from datetime import datetime, timezone
@@ -52,22 +52,28 @@ DANGEROUS_WORDS = [
 ]
 
 VERIFICATION_MESSAGE = """
-🌙 — Avant d’entrer ici, j’aimerais que tu comprennes quelque chose.
+Hey !
 
-Je n’ai jamais voulu construire un endroit basé sur la peur, les conflits ou les apparences.
-Je veux simplement un lieu où chacun puisse souffler, discuter, rire et se sentir accepté sans avoir besoin de porter un masque.
+J'ai créé ce serveur pour réunir ma communauté qui suit mon art, et surtout permettre aux artistes ou personnes qui apprécient l'art et les animaux de trouver ici un endroit où partager ce qu'ils aiment.
 
-Alors ici, je demande une chose simple : le respect.
-
-Respecte les personnes avec qui tu échanges, même lorsque tu n’es pas d’accord avec elles.
+Merci de respecter les personnes avec qui tu échanges, même lorsque tu n’es pas d’accord avec elles.
 Évite les provocations inutiles, le spam ou tout comportement qui pourrait nuire à l’ambiance du serveur.
 Les liens suspects, les comportements malveillants ou les perturbations volontaires ne seront pas tolérés.
 
-Le staff est là pour protéger cette atmosphère, pas pour dominer qui que ce soit.
-Et le système de sécurité du serveur existe uniquement pour préserver cet équilibre.
-
 Si tu es ici avec de bonnes intentions, alors tu es le bienvenu parmi nous. 🌙
-— Foxy
+
+━━━━━━━━━━━━━━━━━━
+
+# 🔐 IMPORTANT — VÉRIFICATION 🔐
+
+**Répond à cette énigme pour rejoindre le serveur :**
+
+> Mon premier est un animal roux, mignon et rusé.
+> Mon second est le pseudo de l'artiste de ce serveur.
+
+**Le code d'accès correspond à la combinaison de ces deux réponses, collées (sans espace) et entièrement en MAJUSCULES.**
+
+━━━━━━━━━━━━━━━━━━
 
 `DZAKA26`
 """
@@ -307,25 +313,21 @@ async def on_message(message):
         )
         return
 
-    # Liens suspects
     if any(link in content_lower for link in SUSPICIOUS_LINKS):
         await message.delete()
         await quarantine(member, "lien suspect")
         return
 
-    # Mots dangereux
     if any(word in content_lower for word in DANGEROUS_WORDS):
         await message.delete()
         await quarantine(member, "message dangereux")
         return
 
-    # Spam de mentions
     if len(message.mentions) >= 5:
         await message.delete()
         await quarantine(member, "spam mentions")
         return
 
-    # Spam clavier : aaaaaaaa, !!!!!!!!, ........
     if len(content_lower) >= 8 and len(set(content_lower.replace(" ", ""))) <= 2:
         await message.delete()
         await quarantine(member, "spam clavier")
@@ -344,13 +346,11 @@ async def on_message(message):
 
     recent_messages = [msg[0] for msg in message_cache[member.id]]
 
-    # Même message répété 3 fois en 10 secondes
     if recent_messages.count(content_lower) >= 3:
         await message.delete()
         await quarantine(member, "message répété")
         return
 
-    # Flood : 6 messages en 10 secondes
     if len(message_cache[member.id]) >= 6:
         await quarantine(member, "flood")
         return
@@ -358,126 +358,11 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-@bot.event
-async def on_guild_channel_create(channel):
-    await asyncio.sleep(2)
-
-    async for entry in channel.guild.audit_logs(
-        limit=5,
-        action=discord.AuditLogAction.channel_create
-    ):
-        if entry.target and entry.target.id == channel.id:
-            await check_nuke(channel.guild, entry.user, "création salon")
-            break
-
-
-@bot.event
-async def on_guild_channel_delete(channel):
-    await asyncio.sleep(2)
-
-    async for entry in channel.guild.audit_logs(
-        limit=5,
-        action=discord.AuditLogAction.channel_delete
-    ):
-        await check_nuke(channel.guild, entry.user, "suppression salon")
-        break
-
-
-@bot.event
-async def on_guild_role_delete(role):
-    await asyncio.sleep(2)
-
-    async for entry in role.guild.audit_logs(
-        limit=5,
-        action=discord.AuditLogAction.role_delete
-    ):
-        await check_nuke(role.guild, entry.user, "suppression rôle")
-        break
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def securite(ctx):
-    await ctx.send("🛡️ Système sécurité actif.")
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def verification(ctx):
-    await ctx.send(
-        f"🔐 Code actuel de vérification : `{VERIFY_CODE.upper()}`"
-    )
-
-
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def refresh_verif(ctx):
     await refresh_verification_message(ctx.guild)
     await ctx.send("✅ Message de vérification actualisé.")
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def raid_on(ctx):
-    global raid_mode
-    raid_mode = True
-    await ctx.send("🚨 Mode raid activé.")
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def raid_off(ctx):
-    global raid_mode
-    raid_mode = False
-    join_cache.clear()
-    await ctx.send("✅ Mode raid désactivé.")
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def status(ctx):
-    await ctx.send(
-        f"🛡️ **Statut sécurité**\n"
-        f"Mode raid : {'ACTIF 🚨' if raid_mode else 'inactif ✅'}\n"
-        f"Membres safe : {len(safe_members)}\n"
-        f"Anti-nuke surveillé : {len(nuke_cache)} utilisateur(s)\n"
-        f"Code vérification : `{VERIFY_CODE.upper()}`"
-    )
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def noproblem(ctx, member: discord.Member):
-    safe_members.add(member.id)
-
-    unverified_role = ctx.guild.get_role(UNVERIFIED_ROLE_ID)
-    quarantine_role = ctx.guild.get_role(QUARANTINE_ROLE_ID)
-    member_role = ctx.guild.get_role(MEMBER_ROLE_ID)
-
-    try:
-        if unverified_role and unverified_role in member.roles:
-            await member.remove_roles(unverified_role, reason="Validation manuelle")
-
-        if quarantine_role and quarantine_role in member.roles:
-            await member.remove_roles(quarantine_role, reason="Validation manuelle")
-
-        if member_role and member_role not in member.roles:
-            await member.add_roles(member_role, reason="Validation manuelle")
-
-    except Exception as error:
-        await ctx.send(f"❌ Erreur : {error}")
-        return
-
-    await ctx.send(f"✅ {member.mention} validé.")
-    await log(ctx.guild, f"🟢 {member.mention} validé manuellement par {ctx.author.mention}")
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def problem(ctx, member: discord.Member):
-    safe_members.discard(member.id)
-    await quarantine(member, "manuel")
-    await ctx.send(f"🚨 {member.mention} placé en quarantaine.")
 
 
 keep_alive()
