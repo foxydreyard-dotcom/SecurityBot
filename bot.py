@@ -104,7 +104,7 @@ async def send_verification_message(member):
 
 
 async def quarantine(member, reason):
-    if member.id in safe_members:
+    if member.id in safe_members and "manuel" not in reason:
         return
 
     role = member.guild.get_role(QUARANTINE_ROLE_ID)
@@ -307,25 +307,25 @@ async def on_message(message):
         )
         return
 
-    if member.id in safe_members:
-        await bot.process_commands(message)
-        return
-
+    # Liens suspects
     if any(link in content_lower for link in SUSPICIOUS_LINKS):
         await message.delete()
         await quarantine(member, "lien suspect")
         return
 
+    # Mots dangereux
     if any(word in content_lower for word in DANGEROUS_WORDS):
         await message.delete()
         await quarantine(member, "message dangereux")
         return
 
+    # Spam de mentions
     if len(message.mentions) >= 5:
         await message.delete()
         await quarantine(member, "spam mentions")
         return
 
+    # Spam clavier : aaaaaaaa, !!!!!!!!, ........
     if len(content_lower) >= 8 and len(set(content_lower.replace(" ", ""))) <= 2:
         await message.delete()
         await quarantine(member, "spam clavier")
@@ -344,11 +344,13 @@ async def on_message(message):
 
     recent_messages = [msg[0] for msg in message_cache[member.id]]
 
+    # Même message répété 3 fois en 10 secondes
     if recent_messages.count(content_lower) >= 3:
         await message.delete()
         await quarantine(member, "message répété")
         return
 
+    # Flood : 6 messages en 10 secondes
     if len(message_cache[member.id]) >= 6:
         await quarantine(member, "flood")
         return
@@ -474,7 +476,7 @@ async def noproblem(ctx, member: discord.Member):
 @commands.has_permissions(administrator=True)
 async def problem(ctx, member: discord.Member):
     safe_members.discard(member.id)
-    await quarantine(member, "ajout manuel")
+    await quarantine(member, "manuel")
     await ctx.send(f"🚨 {member.mention} placé en quarantaine.")
 
 
