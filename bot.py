@@ -18,7 +18,7 @@ QUARANTINE_ROLE_ID = int(os.getenv("QUARANTINE_ROLE_ID"))
 VERIFY_CHANNEL_ID = int(os.getenv("VERIFY_CHANNEL_ID"))
 UNVERIFIED_ROLE_ID = int(os.getenv("UNVERIFIED_ROLE_ID"))
 MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID"))
-VERIFY_CODE = os.getenv("VERIFY_CODE", "RENARDDZAKA").lower()
+VERIFY_CODE = os.getenv("VERIFY_CODE", "RENARDDZAKA").strip().lower()
 
 intents = discord.Intents.default()
 intents.members = True
@@ -41,6 +41,8 @@ SUSPICIOUS_LINKS = [
     "grabify",
     "bit.ly",
     "tinyurl",
+    "discord.gg",
+    "discord.com/invite",
 ]
 
 DANGEROUS_WORDS = [
@@ -89,24 +91,31 @@ async def refresh_verification_message(guild):
     channel = guild.get_channel(VERIFY_CHANNEL_ID)
 
     if not channel:
+        await log(guild, "⚠️ Salon de vérification introuvable.")
         return
 
     try:
         await channel.purge(limit=50)
-    except Exception:
-        pass
+    except Exception as error:
+        await log(guild, f"⚠️ Impossible de nettoyer le salon vérification : {error}")
 
-    await channel.send(VERIFICATION_MESSAGE)
+    try:
+        await channel.send(VERIFICATION_MESSAGE)
+    except Exception as error:
+        await log(guild, f"⚠️ Impossible d'envoyer le message de vérification : {error}")
 
 
 async def send_verification_message(member):
     channel = member.guild.get_channel(VERIFY_CHANNEL_ID)
 
     if channel:
-        await channel.send(
-            f"{member.mention}, lis le message de vérification ci-dessus puis écris le code indiqué pour accéder au serveur.",
-            delete_after=12
-        )
+        try:
+            await channel.send(
+                f"{member.mention}, lis le message de vérification ci-dessus puis écris le code indiqué pour accéder au serveur.",
+                delete_after=12
+            )
+        except Exception as error:
+            await log(member.guild, f"⚠️ Erreur message vérification : {error}")
 
 
 async def quarantine(member, reason):
@@ -167,6 +176,7 @@ async def check_nuke(guild, user, action):
 @bot.event
 async def on_ready():
     print(f"✅ Bot sécurité connecté : {bot.user}")
+    print(f"🔐 Code vérification actif : {VERIFY_CODE.upper()}")
 
     for guild in bot.guilds:
         await refresh_verification_message(guild)
@@ -192,7 +202,6 @@ async def on_member_join(member):
     await send_verification_message(member)
 
     join_cache.append(now.timestamp())
-
     join_cache[:] = [
         t for t in join_cache
         if now.timestamp() - t <= 20
@@ -245,7 +254,7 @@ async def on_message(message):
 
     member = message.author
     content = message.content.strip()
-    content_lower = content.lower()
+    content_lower = content.lower().strip()
 
     if message.channel.id == VERIFY_CHANNEL_ID:
         if content_lower == VERIFY_CODE:
@@ -266,7 +275,7 @@ async def on_message(message):
                         reason="Code de vérification validé"
                     )
 
-                if member_role:
+                if member_role and member_role not in member.roles:
                     await member.add_roles(
                         member_role,
                         reason="Code de vérification validé"
@@ -274,7 +283,10 @@ async def on_message(message):
 
                 safe_members.add(member.id)
 
-                await message.delete()
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
 
                 await message.channel.send(
                     f"✅ {member.mention}, vérification réussie. Bienvenue sur le serveur !",
@@ -291,22 +303,36 @@ async def on_message(message):
                     f"❌ Erreur pendant la vérification : {error}",
                     delete_after=8
                 )
+                await log(
+                    message.guild,
+                    f"❌ Erreur vérification pour {member.mention} : {error}"
+                )
 
             return
 
-        else:
+        if content_lower.startswith("!"):
+            await bot.process_commands(message)
+            return
+
+        try:
             await message.delete()
+        except Exception:
+            pass
 
-            await message.channel.send(
-                f"❌ {member.mention}, code incorrect. Relis le message de vérification.",
-                delete_after=6
-            )
-            return
+        await message.channel.send(
+            f"❌ {member.mention}, code incorrect. Relis le message de vérification.",
+            delete_after=6
+        )
+        return
 
     unverified_role = message.guild.get_role(UNVERIFIED_ROLE_ID)
 
     if unverified_role and unverified_role in member.roles:
-        await message.delete()
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
         await log(
             message.guild,
             f"⚠️ Message supprimé : {member.mention} n’est pas encore vérifié."
@@ -314,22 +340,34 @@ async def on_message(message):
         return
 
     if any(link in content_lower for link in SUSPICIOUS_LINKS):
-        await message.delete()
+        try:
+            await message.delete()
+        except Exception:
+            pass
         await quarantine(member, "lien suspect")
         return
 
     if any(word in content_lower for word in DANGEROUS_WORDS):
-        await message.delete()
+        try:
+            await message.delete()
+        except Exception:
+            pass
         await quarantine(member, "message dangereux")
         return
 
     if len(message.mentions) >= 5:
-        await message.delete()
+        try:
+            await message.delete()
+        except Exception:
+            pass
         await quarantine(member, "spam mentions")
         return
 
     if len(content_lower) >= 8 and len(set(content_lower.replace(" ", ""))) <= 2:
-        await message.delete()
+        try:
+            await message.delete()
+        except Exception:
+            pass
         await quarantine(member, "spam clavier")
         return
 
@@ -337,6 +375,7 @@ async def on_message(message):
         message_cache[member.id] = []
 
     now = datetime.now(timezone.utc).timestamp()
+
     message_cache[member.id].append((content_lower, now))
 
     message_cache[member.id] = [
@@ -347,7 +386,10 @@ async def on_message(message):
     recent_messages = [msg[0] for msg in message_cache[member.id]]
 
     if recent_messages.count(content_lower) >= 3:
-        await message.delete()
+        try:
+            await message.delete()
+        except Exception:
+            pass
         await quarantine(member, "message répété")
         return
 
@@ -358,11 +400,126 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
+@bot.event
+async def on_guild_channel_create(channel):
+    await asyncio.sleep(2)
+
+    async for entry in channel.guild.audit_logs(
+        limit=5,
+        action=discord.AuditLogAction.channel_create
+    ):
+        if entry.target and entry.target.id == channel.id:
+            await check_nuke(channel.guild, entry.user, "création salon")
+            break
+
+
+@bot.event
+async def on_guild_channel_delete(channel):
+    await asyncio.sleep(2)
+
+    async for entry in channel.guild.audit_logs(
+        limit=5,
+        action=discord.AuditLogAction.channel_delete
+    ):
+        await check_nuke(channel.guild, entry.user, "suppression salon")
+        break
+
+
+@bot.event
+async def on_guild_role_delete(role):
+    await asyncio.sleep(2)
+
+    async for entry in role.guild.audit_logs(
+        limit=5,
+        action=discord.AuditLogAction.role_delete
+    ):
+        await check_nuke(role.guild, entry.user, "suppression rôle")
+        break
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def securite(ctx):
+    await ctx.send("🛡️ Système sécurité actif.")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def status(ctx):
+    await ctx.send(
+        f"🛡️ **Statut sécurité**\n"
+        f"Mode raid : {'ACTIF 🚨' if raid_mode else 'inactif ✅'}\n"
+        f"Membres safe : {len(safe_members)}\n"
+        f"Anti-nuke surveillé : {len(nuke_cache)} utilisateur(s)\n"
+        f"Code vérification : `{VERIFY_CODE.upper()}`"
+    )
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def verification(ctx):
+    await ctx.send(
+        f"🔐 Code actuel de vérification : `{VERIFY_CODE.upper()}`"
+    )
+
+
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def refresh_verif(ctx):
     await refresh_verification_message(ctx.guild)
     await ctx.send("✅ Message de vérification actualisé.")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def raid_on(ctx):
+    global raid_mode
+    raid_mode = True
+    await ctx.send("🚨 Mode raid activé.")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def raid_off(ctx):
+    global raid_mode
+    raid_mode = False
+    join_cache.clear()
+    await ctx.send("✅ Mode raid désactivé.")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def noproblem(ctx, member: discord.Member):
+    safe_members.add(member.id)
+
+    unverified_role = ctx.guild.get_role(UNVERIFIED_ROLE_ID)
+    quarantine_role = ctx.guild.get_role(QUARANTINE_ROLE_ID)
+    member_role = ctx.guild.get_role(MEMBER_ROLE_ID)
+
+    try:
+        if unverified_role and unverified_role in member.roles:
+            await member.remove_roles(unverified_role, reason="Validation manuelle")
+
+        if quarantine_role and quarantine_role in member.roles:
+            await member.remove_roles(quarantine_role, reason="Validation manuelle")
+
+        if member_role and member_role not in member.roles:
+            await member.add_roles(member_role, reason="Validation manuelle")
+
+    except Exception as error:
+        await ctx.send(f"❌ Erreur : {error}")
+        return
+
+    await ctx.send(f"✅ {member.mention} validé.")
+    await log(ctx.guild, f"🟢 {member.mention} validé manuellement par {ctx.author.mention}")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def problem(ctx, member: discord.Member):
+    safe_members.discard(member.id)
+    await quarantine(member, "manuel")
+    await ctx.send(f"🚨 {member.mention} placé en quarantaine.")
 
 
 keep_alive()
