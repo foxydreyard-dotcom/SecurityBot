@@ -18,7 +18,7 @@ QUARANTINE_ROLE_ID = int(os.getenv("QUARANTINE_ROLE_ID"))
 VERIFY_CHANNEL_ID = int(os.getenv("VERIFY_CHANNEL_ID"))
 UNVERIFIED_ROLE_ID = int(os.getenv("UNVERIFIED_ROLE_ID"))
 MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID"))
-VERIFY_CODE = os.getenv("VERIFY_CODE", "LUNE2026").lower()
+VERIFY_CODE = os.getenv("VERIFY_CODE", "DZAKA26").lower()
 
 intents = discord.Intents.default()
 intents.members = True
@@ -51,6 +51,27 @@ DANGEROUS_WORDS = [
     "password",
 ]
 
+VERIFICATION_MESSAGE = """
+🌙 — Avant d’entrer ici, j’aimerais que tu comprennes quelque chose.
+
+Je n’ai jamais voulu construire un endroit basé sur la peur, les conflits ou les apparences.
+Je veux simplement un lieu où chacun puisse souffler, discuter, rire et se sentir accepté sans avoir besoin de porter un masque.
+
+Alors ici, je demande une chose simple : le respect.
+
+Respecte les personnes avec qui tu échanges, même lorsque tu n’es pas d’accord avec elles.
+Évite les provocations inutiles, le spam ou tout comportement qui pourrait nuire à l’ambiance du serveur.
+Les liens suspects, les comportements malveillants ou les perturbations volontaires ne seront pas tolérés.
+
+Le staff est là pour protéger cette atmosphère, pas pour dominer qui que ce soit.
+Et le système de sécurité du serveur existe uniquement pour préserver cet équilibre.
+
+Si tu es ici avec de bonnes intentions, alors tu es le bienvenu parmi nous. 🌙
+— Foxy
+
+`DZAKA26`
+"""
+
 
 async def log(guild, text):
     channel = guild.get_channel(LOG_CHANNEL_ID)
@@ -58,21 +79,27 @@ async def log(guild, text):
         await channel.send(text)
 
 
+async def refresh_verification_message(guild):
+    channel = guild.get_channel(VERIFY_CHANNEL_ID)
+
+    if not channel:
+        return
+
+    try:
+        await channel.purge(limit=50)
+    except Exception:
+        pass
+
+    await channel.send(VERIFICATION_MESSAGE)
+
+
 async def send_verification_message(member):
     channel = member.guild.get_channel(VERIFY_CHANNEL_ID)
 
     if channel:
         await channel.send(
-            f"Bienvenue {member.mention} 🌙\n\n"
-            f"Avant d’accéder au serveur, merci de lire les règles.\n\n"
-            f"📜 **Règles principales :**\n"
-            f"• Respect obligatoire envers tous les membres\n"
-            f"• Pas de spam ni de flood\n"
-            f"• Pas de liens suspects\n"
-            f"• Pas de provocation ou comportement toxique\n"
-            f"• Le staff peut intervenir en cas de problème\n\n"
-            f"🔐 **Code de vérification :** `{VERIFY_CODE.upper()}`\n\n"
-            f"Écris simplement le code dans ce salon pour accéder au serveur."
+            f"{member.mention}, lis le message de vérification ci-dessus puis écris le code indiqué pour accéder au serveur.",
+            delete_after=12
         )
 
 
@@ -134,6 +161,9 @@ async def check_nuke(guild, user, action):
 @bot.event
 async def on_ready():
     print(f"✅ Bot sécurité connecté : {bot.user}")
+
+    for guild in bot.guilds:
+        await refresh_verification_message(guild)
 
 
 @bot.event
@@ -211,7 +241,6 @@ async def on_message(message):
     content = message.content.strip()
     content_lower = content.lower()
 
-    # Vérification par code
     if message.channel.id == VERIFY_CHANNEL_ID:
         if content_lower == VERIFY_CODE:
             unverified_role = message.guild.get_role(UNVERIFIED_ROLE_ID)
@@ -268,8 +297,8 @@ async def on_message(message):
             )
             return
 
-    # Si membre non vérifié parle ailleurs, on bloque
     unverified_role = message.guild.get_role(UNVERIFIED_ROLE_ID)
+
     if unverified_role and unverified_role in member.roles:
         await message.delete()
         await log(
@@ -278,30 +307,25 @@ async def on_message(message):
         )
         return
 
-    # Safe list
     if member.id in safe_members:
         await bot.process_commands(message)
         return
 
-    # Liens suspects
     if any(link in content_lower for link in SUSPICIOUS_LINKS):
         await message.delete()
         await quarantine(member, "lien suspect")
         return
 
-    # Mots dangereux
     if any(word in content_lower for word in DANGEROUS_WORDS):
         await message.delete()
         await quarantine(member, "message dangereux")
         return
 
-    # Spam mentions
     if len(message.mentions) >= 5:
         await message.delete()
         await quarantine(member, "spam mentions")
         return
 
-    # Spam clavier
     if len(content_lower) >= 8 and len(set(content_lower.replace(" ", ""))) <= 2:
         await message.delete()
         await quarantine(member, "spam clavier")
@@ -381,6 +405,13 @@ async def verification(ctx):
     await ctx.send(
         f"🔐 Code actuel de vérification : `{VERIFY_CODE.upper()}`"
     )
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def refresh_verif(ctx):
+    await refresh_verification_message(ctx.guild)
+    await ctx.send("✅ Message de vérification actualisé.")
 
 
 @bot.command()
