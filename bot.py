@@ -18,7 +18,7 @@ QUARANTINE_ROLE_ID = int(os.getenv("QUARANTINE_ROLE_ID"))
 VERIFY_CHANNEL_ID = int(os.getenv("VERIFY_CHANNEL_ID"))
 UNVERIFIED_ROLE_ID = int(os.getenv("UNVERIFIED_ROLE_ID"))
 MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID"))
-VERIFY_CODE = os.getenv("VERIFY_CODE", "DZAKA26").lower()
+VERIFY_CODE = os.getenv("VERIFY_CODE", "RENARDDZAKA").lower()
 
 intents = discord.Intents.default()
 intents.members = True
@@ -75,7 +75,7 @@ Si tu es ici avec de bonnes intentions, alors tu es le bienvenu parmi nous. 🌙
 
 ━━━━━━━━━━━━━━━━━━
 
-`DZAKA26`
+`RENARDDZAKA`
 """
 
 
