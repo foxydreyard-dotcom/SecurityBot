@@ -1,7 +1,6 @@
 import os
 import re
 import asyncio
-import unicodedata
 from datetime import datetime, timezone
 
 import discord
@@ -12,8 +11,14 @@ from keep_alive import keep_alive
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID"))
 QUARANTINE_ROLE_ID = int(os.getenv("QUARANTINE_ROLE_ID"))
+
+VERIFY_CHANNEL_ID = int(os.getenv("VERIFY_CHANNEL_ID"))
+UNVERIFIED_ROLE_ID = int(os.getenv("UNVERIFIED_ROLE_ID"))
+MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID"))
+VERIFY_CODE = os.getenv("VERIFY_CODE", "LUNE2026").lower()
 
 intents = discord.Intents.default()
 intents.members = True
@@ -30,54 +35,20 @@ raid_mode = False
 safe_members = set()
 
 SUSPICIOUS_LINKS = [
-    "discord.gift", "free-nitro", "nitro-free", "grabify", "bit.ly", "tinyurl"
+    "discord.gift",
+    "free-nitro",
+    "nitro-free",
+    "grabify",
+    "bit.ly",
+    "tinyurl",
 ]
 
 DANGEROUS_WORDS = [
-    "token grabber", "ddos", "hack server", "free nitro", "password"
-]
-
-BAD_PATTERNS = [
-    "fdp", "fils de pute", "pute", "putain", "ptn", "salope", "salop",
-    "connard", "conard", "connasse", "encule", "enculer", "batard",
-    "bouffon", "clochard", "clodo", "demeure", "debile", "abruti",
-    "idiot", "imbecile", "attarde", "mongol", "gros porc", "porc",
-    "chien", "sale chien", "sale rat", "rat", "cafard", "clebard",
-    "merdeux", "grosse merde", "sous merde", "ordure", "dechet",
-    "tare", "fou malade", "malade mental", "nique ta mere", "nik ta mere",
-    "nique ta mer", "nik ta mer", "nique tes morts", "nik tes morts",
-    "tes morts", "de tes morts", "suce", "suce moi", "va sucer",
-    "ferme ta gueule", "ta gueule", "tg", "ntm", "fdmm", "fdm", "fdt",
-    "nik", "nique", "encu", "pd", "pede", "tafiole", "travelo",
-    "pauvre type", "pauvre merde", "gros con", "sale con", "sale pute",
-    "sale merde", "tu sers a rien", "personne t aime",
-    "tout le monde te deteste", "t es inutile", "tu pues la merde",
-    "tu fais pitie", "fuck you", "bitch", "asshole", "motherfucker",
-    "son of a bitch", "stfu", "dumbass", "retard"
-]
-
-THREAT_PATTERNS = [
-    "je vais te tuer", "jvais te tuer", "jte tue", "je te tue",
-    "tu vas mourir", "je vais te retrouver", "jvais te retrouver",
-    "je vais te frapper", "jvais te frapper", "je vais te demolir",
-    "allez crever", "va crever", "va crever en enfer",
-    "crever en enfer", "vous allez crever", "tu vas crever",
-    "va mourir", "allez mourir", "meurs", "mourrez"
-]
-
-CONTEXT_PATTERNS = [
-    "on ma dit", "on m a dit", "il ma dit", "il m a dit",
-    "elle ma dit", "elle m a dit", "jai recu", "j ai recu",
-    "on ma insulte", "on m a insulte", "on ma menace", "on m a menace",
-    "en mp", "screen", "capture", "preuve", "temoignage",
-    "je viens vous voir", "je signale", "il a dit que", "elle a dit que",
-    "on m'a dit", "il m'a dit", "elle m'a dit", "j'ai reçu"
-]
-
-DIRECT_ATTACK_WORDS = [
-    "tes", "t es", "tu es", "toi", "va te", "ferme ta", "sale",
-    "nique", "nik", "ta mere", "ta mer", "tes morts", "de tes morts",
-    "creve", "crever", "meurs", "mourrez"
+    "token grabber",
+    "ddos",
+    "hack server",
+    "free nitro",
+    "password",
 ]
 
 
@@ -87,75 +58,22 @@ async def log(guild, text):
         await channel.send(text)
 
 
-def normalize_text(text):
-    text = text.lower()
-    text = unicodedata.normalize("NFD", text)
-    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
-    text = re.sub(r"[^a-z0-9@#\s]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+async def send_verification_message(member):
+    channel = member.guild.get_channel(VERIFY_CHANNEL_ID)
 
-
-def contains_pattern(content, patterns):
-    content = normalize_text(content)
-    return any(pattern in content for pattern in patterns)
-
-
-def contains_bad_word(content):
-    return contains_pattern(content, BAD_PATTERNS)
-
-
-def contains_threat(content):
-    return contains_pattern(content, THREAT_PATTERNS)
-
-
-def is_context_ignored(content):
-    return contains_pattern(content, CONTEXT_PATTERNS)
-
-
-def is_direct_attack(message):
-    content = normalize_text(message.content)
-
-    if len(message.mentions) > 0:
-        return True
-
-    return any(word in content for word in DIRECT_ATTACK_WORDS)
-
-
-def starts_like_attack(content):
-    content = normalize_text(content)
-    attack_starts = (
-        "tu ", "toi ", "tes ", "t es ", "sale ", "nique ", "nik ",
-        "va ", "ferme ", "creve ", "meurs "
-    )
-    return content.startswith(attack_starts)
-
-
-def is_report_message(message):
-    content = normalize_text(message.content)
-
-    has_context = is_context_ignored(content)
-    has_bad = contains_bad_word(content) or contains_threat(content)
-
-    if not has_context:
-        return False
-
-    if starts_like_attack(content):
-        return False
-
-    report_words = [
-        "je signale", "je viens vous voir", "on ma dit", "il ma dit",
-        "elle ma dit", "jai recu", "en mp", "screen", "capture",
-        "preuve", "temoignage"
-    ]
-
-    if has_bad and any(word in content for word in report_words):
-        return True
-
-    if has_context and not is_direct_attack(message):
-        return True
-
-    return False
+    if channel:
+        await channel.send(
+            f"Bienvenue {member.mention} 🌙\n\n"
+            f"Avant d’accéder au serveur, merci de lire les règles.\n\n"
+            f"📜 **Règles principales :**\n"
+            f"• Respect obligatoire envers tous les membres\n"
+            f"• Pas de spam ni de flood\n"
+            f"• Pas de liens suspects\n"
+            f"• Pas de provocation ou comportement toxique\n"
+            f"• Le staff peut intervenir en cas de problème\n\n"
+            f"🔐 **Code de vérification :** `{VERIFY_CODE.upper()}`\n\n"
+            f"Écris simplement le code dans ce salon pour accéder au serveur."
+        )
 
 
 async def quarantine(member, reason):
@@ -208,6 +126,7 @@ async def check_nuke(guild, user, action):
 
     if len(nuke_cache[user.id]) >= 3:
         member = guild.get_member(user.id)
+
         if member:
             await quarantine(member, f"anti-nuke : {action}")
 
@@ -221,11 +140,21 @@ async def on_ready():
 async def on_member_join(member):
     global raid_mode
 
-    if member.id in safe_members:
-        await log(member.guild, f"🟢 Membre safe : {member.mention}")
-        return
-
     now = datetime.now(timezone.utc)
+
+    unverified_role = member.guild.get_role(UNVERIFIED_ROLE_ID)
+
+    if unverified_role:
+        try:
+            await member.add_roles(
+                unverified_role,
+                reason="Nouveau membre en attente de vérification"
+            )
+        except Exception as error:
+            await log(member.guild, f"⚠️ Impossible d’ajouter Non vérifié : {error}")
+
+    await send_verification_message(member)
+
     join_cache.append(now.timestamp())
 
     join_cache[:] = [
@@ -238,6 +167,7 @@ async def on_member_join(member):
         await log(member.guild, "🚨 Mode raid activé automatiquement.")
 
     account_age = now - member.created_at
+
     risk = 0
     reasons = []
 
@@ -255,84 +185,124 @@ async def on_member_join(member):
 
     if raid_mode:
         risk += 5
-        reasons.append("mode raid")
+        reasons.append("mode raid actif")
 
     await log(
         member.guild,
         f"👤 Nouveau membre : {member.mention}\n"
+        f"Compte créé il y a {account_age.days} jours\n"
         f"Risque : {risk}\n"
         f"Détails : {', '.join(reasons) if reasons else 'aucun'}"
     )
 
-    if risk >= 3:
-        await quarantine(member, "profil suspect")
+    if risk >= 6:
+        await quarantine(member, "profil très suspect à l’arrivée")
 
 
 @bot.event
 async def on_message(message):
-    if message.author.bot or not message.guild:
+    if message.author.bot:
+        return
+
+    if not message.guild:
         return
 
     member = message.author
-    content = message.content
-    normalized = normalize_text(content)
+    content = message.content.strip()
+    content_lower = content.lower()
 
+    # Vérification par code
+    if message.channel.id == VERIFY_CHANNEL_ID:
+        if content_lower == VERIFY_CODE:
+            unverified_role = message.guild.get_role(UNVERIFIED_ROLE_ID)
+            member_role = message.guild.get_role(MEMBER_ROLE_ID)
+            quarantine_role = message.guild.get_role(QUARANTINE_ROLE_ID)
+
+            try:
+                if unverified_role and unverified_role in member.roles:
+                    await member.remove_roles(
+                        unverified_role,
+                        reason="Code de vérification validé"
+                    )
+
+                if quarantine_role and quarantine_role in member.roles:
+                    await member.remove_roles(
+                        quarantine_role,
+                        reason="Code de vérification validé"
+                    )
+
+                if member_role:
+                    await member.add_roles(
+                        member_role,
+                        reason="Code de vérification validé"
+                    )
+
+                safe_members.add(member.id)
+
+                await message.delete()
+
+                await message.channel.send(
+                    f"✅ {member.mention}, vérification réussie. Bienvenue sur le serveur !",
+                    delete_after=8
+                )
+
+                await log(
+                    message.guild,
+                    f"✅ Vérification réussie pour {member.mention}"
+                )
+
+            except Exception as error:
+                await message.channel.send(
+                    f"❌ Erreur pendant la vérification : {error}",
+                    delete_after=8
+                )
+
+            return
+
+        else:
+            await message.delete()
+
+            await message.channel.send(
+                f"❌ {member.mention}, code incorrect. Relis le message de vérification.",
+                delete_after=6
+            )
+            return
+
+    # Si membre non vérifié parle ailleurs, on bloque
+    unverified_role = message.guild.get_role(UNVERIFIED_ROLE_ID)
+    if unverified_role and unverified_role in member.roles:
+        await message.delete()
+        await log(
+            message.guild,
+            f"⚠️ Message supprimé : {member.mention} n’est pas encore vérifié."
+        )
+        return
+
+    # Safe list
     if member.id in safe_members:
         await bot.process_commands(message)
         return
 
-    if is_report_message(message):
-        await log(
-            message.guild,
-            f"ℹ️ Message sensible ignoré comme signalement\n"
-            f"Auteur : {member.mention}"
-        )
-        await bot.process_commands(message)
-        return
-
-    if contains_threat(normalized) and is_direct_attack(message):
-        await message.delete()
-        await quarantine(member, "menace directe")
-        await log(
-            message.guild,
-            f"🚨 Menace directe détectée\n"
-            f"Auteur : {member.mention}\n"
-            f"Message supprimé."
-        )
-        return
-
-    if contains_bad_word(normalized) and is_direct_attack(message):
-        await message.delete()
-        await log(
-            message.guild,
-            f"⚠️ Insulte directe détectée\n"
-            f"Auteur : {member.mention}\n"
-            f"Message supprimé."
-        )
-
-        try:
-            await member.send("⚠️ Merci de rester respectueux sur le serveur.")
-        except Exception:
-            pass
-
-        return
-
-    if any(link in normalized for link in SUSPICIOUS_LINKS):
+    # Liens suspects
+    if any(link in content_lower for link in SUSPICIOUS_LINKS):
         await message.delete()
         await quarantine(member, "lien suspect")
         return
 
-    if any(word in normalized for word in DANGEROUS_WORDS):
+    # Mots dangereux
+    if any(word in content_lower for word in DANGEROUS_WORDS):
         await message.delete()
         await quarantine(member, "message dangereux")
         return
 
+    # Spam mentions
     if len(message.mentions) >= 5:
         await message.delete()
         await quarantine(member, "spam mentions")
         return
 
-    if len(normalized) >= 8 and len(set(normalized.replace(" ", ""))) <= 2:
+    # Spam clavier
+    if len(content_lower) >= 8 and len(set(content_lower.replace(" ", ""))) <= 2:
         await message.delete()
         await quarantine(member, "spam clavier")
         return
@@ -341,7 +311,7 @@ async def on_message(message):
         message_cache[member.id] = []
 
     now = datetime.now(timezone.utc).timestamp()
-    message_cache[member.id].append((normalized, now))
+    message_cache[member.id].append((content_lower, now))
 
     message_cache[member.id] = [
         msg for msg in message_cache[member.id]
@@ -350,7 +320,7 @@ async def on_message(message):
 
     recent_messages = [msg[0] for msg in message_cache[member.id]]
 
-    if recent_messages.count(normalized) >= 3:
+    if recent_messages.count(content_lower) >= 3:
         await message.delete()
         await quarantine(member, "message répété")
         return
@@ -407,6 +377,14 @@ async def securite(ctx):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
+async def verification(ctx):
+    await ctx.send(
+        f"🔐 Code actuel de vérification : `{VERIFY_CODE.upper()}`"
+    )
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
 async def raid_on(ctx):
     global raid_mode
     raid_mode = True
@@ -429,7 +407,8 @@ async def status(ctx):
         f"🛡️ **Statut sécurité**\n"
         f"Mode raid : {'ACTIF 🚨' if raid_mode else 'inactif ✅'}\n"
         f"Membres safe : {len(safe_members)}\n"
-        f"Anti-nuke surveillé : {len(nuke_cache)} utilisateur(s)"
+        f"Anti-nuke surveillé : {len(nuke_cache)} utilisateur(s)\n"
+        f"Code vérification : `{VERIFY_CODE.upper()}`"
     )
 
 
@@ -437,17 +416,27 @@ async def status(ctx):
 @commands.has_permissions(administrator=True)
 async def noproblem(ctx, member: discord.Member):
     safe_members.add(member.id)
-    role = ctx.guild.get_role(QUARANTINE_ROLE_ID)
+
+    unverified_role = ctx.guild.get_role(UNVERIFIED_ROLE_ID)
+    quarantine_role = ctx.guild.get_role(QUARANTINE_ROLE_ID)
+    member_role = ctx.guild.get_role(MEMBER_ROLE_ID)
 
     try:
-        if role and role in member.roles:
-            await member.remove_roles(role, reason="safe")
+        if unverified_role and unverified_role in member.roles:
+            await member.remove_roles(unverified_role, reason="Validation manuelle")
+
+        if quarantine_role and quarantine_role in member.roles:
+            await member.remove_roles(quarantine_role, reason="Validation manuelle")
+
+        if member_role and member_role not in member.roles:
+            await member.add_roles(member_role, reason="Validation manuelle")
+
     except Exception as error:
         await ctx.send(f"❌ Erreur : {error}")
         return
 
     await ctx.send(f"✅ {member.mention} validé.")
-    await log(ctx.guild, f"🟢 {member.mention} retiré quarantaine.")
+    await log(ctx.guild, f"🟢 {member.mention} validé manuellement par {ctx.author.mention}")
 
 
 @bot.command()
