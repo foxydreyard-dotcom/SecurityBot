@@ -185,9 +185,11 @@ async def on_member_join(member):
     if welcome_channel:
         try:
             await welcome_channel.send(
-                f"🌙✨ Bienvenue {member.mention} sur le serveur !\n\n"
-                f"Nous espérons que tu te plairas ici parmi nous.\n"
-                f"Installe-toi confortablement et amuse-toi bien 💛"
+                await welcome_channel.send(
+    f"<:hi:892451489333780551> <:joy:892479257517883413> Bienvenue {member.mention} sur le serveur !\n\n"
+    f"Nous espérons que tu te plairas ici parmi nous.\n"
+    f"Installe-toi confortablement, prends le temps de découvrir les lieux et amuse-toi bien <:thx:893254491053367396>"
+)
             )
         except Exception as error:
             await log(member.guild, f"⚠️ Erreur bienvenue : {error}")
